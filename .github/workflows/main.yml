@@ -3,51 +3,71 @@ name: Build Sweet Kernel
 on:
   push:
     branches:
-      - bpf  # Change if you use another branch
+      - bpf
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ARCH: arm64
+      KBUILD_OUTPUT: out
 
     steps:
-    - name: Checkout source
-      uses: actions/checkout@v3
+      - name: Checkout source
+        uses: actions/checkout@v3
 
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y git build-essential bc ccache flex bison libncurses-dev unzip wget tar
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git build-essential bc ccache flex bison libncurses-dev unzip wget tar
 
-    - name: Download toolchain
-      run: |
-        mkdir -p ~/toolchain && cd ~/toolchain
-        wget https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9/releases/download/4.9/aarch64-linux-android-4.9.tar.xz
-        tar xf aarch64-linux-android-4.9.tar.xz
+      - name: Download Clang/LLVM toolchain
+        run: |
+          mkdir -p ~/toolchain && cd ~/toolchain
+          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/bd96dfe349c962681f0e5388af874c771ef96670/clang‑r416183b.tar.gz
+          tar xf clang‑r416183b.tar.gz
 
-    - name: Export environment
-      run: |
-        export ARCH=arm64
-        export CROSS_COMPILE=~/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android-
-        export KBUILD_OUTPUT=out
+      - name: Set cross‑compile environment
+        run: |
+          export PATH=~/toolchain/clang‑r416183b/bin:$PATH
+          export CROSS_COMPILE=aarch64-linux-android-
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CC=clang
 
-    - name: Configure kernel
-      run: |
-        make O=out sweet_defconfig
+      - name: Cache build output and toolchain
+        uses: actions/cache@v4
+        id: cache-toolchain
+        with:
+          path: |
+            ~/toolchain
+            out
+          key: ${{ runner.os }}-sweet-kernel-${{ hashFiles('**/arch/arm64/configs/sweet_defconfig') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-sweet-kernel-
 
-    - name: Build kernel
-      run: |
-        make -j$(nproc) O=out
+      - name: Configure kernel
+        run: |
+          make O=out sweet_defconfig
 
-    - name: Package kernel for TWRP
-      run: |
-        mkdir -p kernel_zip
-        cp out/arch/arm64/boot/Image.gz-dtb kernel_zip/
-        cd kernel_zip
-        zip -r sweet_kernel.zip Image.gz-dtb
-        mv sweet_kernel.zip ../
+      - name: Build kernel
+        run: |
+          make -j$(nproc) O=out \
+            ARCH=${{ env.ARCH }} \
+            CC=${{ env.CC }} \
+            CLANG_TRIPLE=${{ env.CLANG_TRIPLE }} \
+            CROSS_COMPILE=${{ env.CROSS_COMPILE }}
 
-    - name: Upload kernel artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: sweet_kernel
-        path: sweet_kernel.zip
+      - name: Package kernel for TWRP
+        run: |
+          mkdir -p kernel_zip
+          cp out/arch/arm64/boot/Image.gz-dtb kernel_zip/
+          cd kernel_zip
+          zip -r sweet_kernel_${{ github.run_number }}.zip Image.gz-dtb
+          mv sweet_kernel_${{ github.run_number }}.zip ../
+
+      - name: Upload kernel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sweet_kernel_${{ github.run_number }}
+          path: sweet_kernel_${{ github.run_number }}.zip
