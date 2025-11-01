@@ -24,7 +24,7 @@ jobs:
     - name: Download prebuilt Clang toolchain
       run: |
         mkdir -p ~/clang
-        wget -O - https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz | tar -xz -C ~/clang
+        wget -O - https://github.com/itsSkYp3r/clang-build-tools/releases/download/clang-17/clang-llvm-17.0.2.tar.gz | tar -xz -C ~/clang
 
     - name: Configure kernel
       run: |
