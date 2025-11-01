@@ -1,0 +1,44 @@
+name: Android Kernel Build
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout kernel source
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc bison build-essential ccache flex git libncurses5-dev libssl-dev libelf-dev python3
+
+    - name: Download prebuilt Clang toolchain
+      run: |
+        mkdir -p ~/clang
+        wget -O - https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz | tar -xz -C ~/clang
+
+    - name: Configure kernel
+      run: |
+        export PATH=~/clang/bin:$PATH
+        make O=out ARCH=arm64 sweet_defconfig
+
+    - name: Build kernel
+      run: |
+        export PATH=~/clang/bin:$PATH
+        make -j$(nproc) O=out ARCH=arm64 CC=clang
+
+    - name: Upload kernel Image
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel-image
+        path: |
+          out/arch/arm64/boot/Image
+          out/arch/arm64/boot/Image.gz
