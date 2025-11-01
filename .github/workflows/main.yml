@@ -7,6 +7,7 @@ on:
       - master
       - bpf
   pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,22 +20,30 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc bison build-essential ccache flex git libncurses5-dev libssl-dev libelf-dev python3
+        sudo apt-get install -y bc bison build-essential ccache flex git libncurses5-dev libssl-dev libelf-dev python3 wget tar zstd
 
-    - name: Download prebuilt Clang toolchain
+    - name: Download and extract Clang toolchain (Proton Clang)
       run: |
         mkdir -p ~/clang
-        wget -O - https://android.googlesource.com/kernel/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r450784d.tar.gz | tar -xz -C ~/clang
+        wget -q https://github.com/kdrag0n/proton-clang/releases/download/20230805/proton-clang-r487747b.tar.zst -O /tmp/clang.tar.zst
+        tar --use-compress-program=unzstd -xf /tmp/clang.tar.zst -C ~/clang
+        echo "Clang installed to ~/clang"
 
     - name: Configure kernel
       run: |
         export PATH=~/clang/bin:$PATH
-        make O=out ARCH=arm64 sweet_defconfig
+        export ARCH=arm64
+        make O=out sweet_defconfig
 
     - name: Build kernel
       run: |
         export PATH=~/clang/bin:$PATH
-        make -j$(nproc) O=out ARCH=arm64 CC=clang
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CC=clang
+        export LLVM=1
+        export LLVM_IAS=1
+        make -j$(nproc) O=out
 
     - name: Upload kernel Image
       uses: actions/upload-artifact@v4
