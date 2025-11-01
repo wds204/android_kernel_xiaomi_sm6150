@@ -3,8 +3,7 @@ name: Build Sweet Kernel
 on:
   push:
     branches:
-      - main 
-      - bpf # Change if you use another branch
+      - main  # Change if you use another branch
 
 jobs:
   build:
@@ -32,3 +31,23 @@ jobs:
         export KBUILD_OUTPUT=out
 
     - name: Configure kernel
+      run: |
+        make O=out sweet_defconfig
+
+    - name: Build kernel
+      run: |
+        make -j$(nproc) O=out
+
+    - name: Package kernel for TWRP
+      run: |
+        mkdir -p kernel_zip
+        cp out/arch/arm64/boot/Image.gz-dtb kernel_zip/
+        cd kernel_zip
+        zip -r sweet_kernel.zip Image.gz-dtb
+        mv sweet_kernel.zip ../
+
+    - name: Upload kernel artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: sweet_kernel
+        path: sweet_kernel.zip
