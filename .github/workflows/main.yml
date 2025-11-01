@@ -3,7 +3,7 @@ name: Build Sweet Kernel
 on:
   push:
     branches:
-      - main  # Change if you use another branch
+      - bpf  # Change if you use another branch
 
 jobs:
   build:
