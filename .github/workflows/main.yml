@@ -1,53 +1,54 @@
-name: Android Kernel Build
+name: Build Sweet Kernel
 
 on:
   push:
     branches:
-      - main
-      - master
-      - bpf
-  pull_request:
-  workflow_dispatch:
+      - main 
+      - bpf # Change if you use another branch
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout kernel source
-      uses: actions/checkout@v4
+    - name: Checkout source
+      uses: actions/checkout@v3
 
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y bc bison build-essential ccache flex git libncurses5-dev libssl-dev libelf-dev python3 wget tar zstd
+        sudo apt update
+        sudo apt install -y git build-essential bc ccache flex bison libncurses5 libncurses5-dev unzip wget tar
 
-    - name: Download and extract Clang toolchain (Proton Clang)
+    - name: Download toolchain
       run: |
-        mkdir -p ~/clang
-        git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git ~/clang || \
-        git clone --depth=1 --single-branch https://github.com/arter97/clang.git ~/clang
+        mkdir -p ~/toolchain && cd ~/toolchain
+        wget https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9/releases/download/4.9/aarch64-linux-android-4.9.tar.xz
+        tar xf aarch64-linux-android-4.9.tar.xz
+
+    - name: Export environment
+      run: |
+        export ARCH=arm64
+        export CROSS_COMPILE=~/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android-
+        export KBUILD_OUTPUT=out
 
     - name: Configure kernel
       run: |
-        export PATH=~/clang/bin:$PATH
-        export ARCH=arm64
         make O=out sweet_defconfig
 
     - name: Build kernel
       run: |
-        export PATH=~/clang/bin:$PATH
-        export ARCH=arm64
-        export SUBARCH=arm64
-        export CC=clang
-        export LLVM=1
-        export LLVM_IAS=1
         make -j$(nproc) O=out
 
-    - name: Upload kernel Image
-      uses: actions/upload-artifact@v4
+    - name: Package kernel for TWRP
+      run: |
+        mkdir -p kernel_zip
+        cp out/arch/arm64/boot/Image.gz-dtb kernel_zip/
+        cd kernel_zip
+        zip -r sweet_kernel.zip Image.gz-dtb
+        mv sweet_kernel.zip ../
+
+    - name: Upload kernel artifact
+      uses: actions/upload-artifact@v3
       with:
-        name: kernel-image
-        path: |
-          out/arch/arm64/boot/Image
-          out/arch/arm64/boot/Image.gz
+        name: sweet_kernel
+        path: sweet_kernel.zip
