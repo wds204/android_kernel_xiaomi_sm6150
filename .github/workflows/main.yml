@@ -24,7 +24,7 @@ jobs:
     - name: Download prebuilt Clang toolchain
       run: |
         mkdir -p ~/clang
-        wget -O - https://release-assets.githubusercontent.com/github-production-release-asset/75821432/df9cfbdb-e866-4603-b2db-3dfa7d9f0261?sp=r&sv=2018-11-09&sr=b&spr=https&se=2025-11-01T15%3A58%3A29Z&rscd=attachment%3B+filename%3Dclang-18.1.8.src.tar.xz&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2025-11-01T14%3A57%3A46Z&ske=2025-11-01T15%3A58%3A29Z&sks=b&skv=2018-11-09&sig=6fUunS17n8tCzBNjsKNmujIC5wodDOGctvU4Yt7iLJ8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc2MjAxMDg2NiwibmJmIjoxNzYyMDA5MDY2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.azL9a9yODSFfbwi_6V_6DSMwibbjBZCWS8sIsQuTgvs&response-content-disposition=attachment%3B%20filename%3Dclang-18.1.8.src.tar.xz&response-content-type=application%2Foctet-stream | tar -xz -C ~/clang
+        wget -O - https://android.googlesource.com/kernel/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r450784d.tar.gz | tar -xz -C ~/clang
 
     - name: Configure kernel
       run: |
