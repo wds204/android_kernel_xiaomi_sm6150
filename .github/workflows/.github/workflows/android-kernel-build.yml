@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+      - bpf
   pull_request:
 
 jobs:
