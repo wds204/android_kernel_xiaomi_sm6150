@@ -25,9 +25,8 @@ jobs:
     - name: Download and extract Clang toolchain (Proton Clang)
       run: |
         mkdir -p ~/clang
-        wget -q https://github.com/kdrag0n/proton-clang/releases/download/20230805/proton-clang-r487747b.tar.zst -O /tmp/clang.tar.zst
-        tar --use-compress-program=unzstd -xf /tmp/clang.tar.zst -C ~/clang
-        echo "Clang installed to ~/clang"
+        git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git ~/clang || \
+        git clone --depth=1 --single-branch https://github.com/arter97/clang.git ~/clang
 
     - name: Configure kernel
       run: |
