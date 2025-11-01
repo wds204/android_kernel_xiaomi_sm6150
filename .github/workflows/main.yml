@@ -16,7 +16,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y git build-essential bc ccache flex bison libncurses5 libncurses5-dev unzip wget tar
+        sudo apt install -y git build-essential bc ccache flex bison libncurses-dev unzip wget tar
 
     - name: Download toolchain
       run: |
