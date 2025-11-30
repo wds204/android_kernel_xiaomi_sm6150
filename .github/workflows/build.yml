@@ -13,43 +13,8 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install dependencies (Ubuntu 24.04 compatible)
       run: |
         sudo dpkg --add-architecture i386
         sudo apt update
-        sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git libncurses-dev libc6:i386 libstdc++6:i386 libssl-dev liblz4-tool zip zlib1g-dev:i386 python3
-
-    - name: Download Proton-Clang
-      run: |
-        mkdir clang && cd clang
-        curl -LO https://github.com/kdrag0n/proton-clang/releases/download/20240820/proton-clang-20240820.tar.xz
-        tar -xf proton-clang-20240820.tar.xz
-        echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
-
-    - name: Build the kernel ← THIS WAS MISSING!
-      run: |
-        export ARCH=arm64
-        export SUBARCH=arm64
-        export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-        make O=out mrproper
-        make O=out sweet_defconfig
-        make O=out olddefconfig
-        make -j$(nproc --all) O=out \
-          CC=clang \
-          CLANG_TRIPLE=aarch64-linux-gnu- \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-
-    - name: Package AnyKernel3 zip ← THIS WAS ALSO MISSING!
-      if: success()
-      run: |
-        git clone https://github.com/osm0sis/AnyKernel3 anykernel
-        cp out/arch/arm64/boot/Image.gz-dtb anykernel/ 2>/dev/null || cp out/arch/arm64/boot/Image anykernel/
-        cd anykernel
-        zip -r9 ../wdsKernel-sweet-A15-$(date +%Y%m%d-%H%M).zip * -x .git README.md
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: wdsKernel-sweet-A15
-        path: wdsKernel-sweet-A15-*.zip
+        sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git libncurses-dev libc6
