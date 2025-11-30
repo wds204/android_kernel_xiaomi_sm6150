@@ -1,45 +1,90 @@
-name: Android Kernel Build
+steps:
+  - name: Checkout Kernel Source
+    uses: actions/checkout@v4
+    with:
+      # Checks out the repository where this workflow file is located
+      ref: ${{ github.event.inputs.branch }}
+      path: kernel
 
-on:
-  push:
-    branches:
-      - main
-      - master
-      - bpf
-  pull_request:
+  - name: Install Build Dependencies
+    # Install necessary packages for kernel compilation (flex, bison, ncurses, etc.)
+    run: |
+      sudo apt update
+      sudo apt install -y ccache wget xz-utils flex bison libssl-dev libncurses5-dev bc
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+  - name: Setup Toolchain (AOSP Clang)
+    # Download the cross-compiler toolchain and set the PATH
+    run: |
+      cd kernel
+      mkdir -p clang
+      wget -qO- ${{ env.TOOLCHAIN_URL }} | tar xz -C clang
+      
+      # Check for 'bin' or 'tools/clang/bin' structure
+      if [ -d "clang/bin" ]; then
+        export PATH="$(pwd)/clang/bin:$PATH"
+      elif [ -d "clang/tools/clang/bin" ]; then
+        export PATH="$(pwd)/clang/tools/clang/bin:$PATH"
+      fi
+      
+      # Print the clang version to confirm setup
+      clang --version
 
-    steps:
-    - name: Vantom
-      uses: actions/checkout@v4
+  - name: Set up Environment Variables
+    run: |
+      # Set cross-compilation variables for Clang/LLVM
+      echo "CC=clang" >> $GITHUB_ENV
+      echo "LD=ld.lld" >> $GITHUB_ENV
+      echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
+      echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+      echo "CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> $GITHUB_ENV
+      echo "PATH=$PATH" >> $GITHUB_ENV
+      
+  - name: Generate Kernel Configuration
+    # The configuration file tells the kernel what to build.
+    run: |
+      cd kernel
+      # Create an output directory for a clean build
+      mkdir -p out
+      
+      # Generate the .config file from the specified defconfig
+      make O=out ${{ env.KERNEL_CONFIG }}
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y bc bison build-essential ccache flex git libncurses5-dev libssl-dev libelf-dev python3
+  - name: Compile the Kernel
+    # Use 'nproc' for maximum parallel compilation
+    # -j$(nproc) tells the system to use all available cores.
+    run: |
+      cd kernel
+      # Start the actual compilation process
+      make -j$(nproc) O=out
 
-    - name: Download prebuilt Clang toolchain
-      run: |
-        mkdir -p ~/clang
-        wget -O - https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz | tar -xz -C ~/clang
+  - name: Locate and Package Output
+    # The compiled kernel image is usually located at out/arch/arm64/boot/Image
+    run: |
+      cd kernel
+      # Find the main kernel image file, which might be compressed (Image.gz, Image.lz4, etc.)
+      KERNEL_IMAGE=$(find out/arch/${{ env.ARCH }}/boot -name "Image*" -o -name "zImage*" -o -name "bzImage*" | head -n 1)
+      
+      if [ -f "$KERNEL_IMAGE" ]; then
+        echo "Kernel Image found at: $KERNEL_IMAGE"
+        # Move the final image to a predictable location for artifact upload
+        mkdir -p ${{ github.workspace }}/artifacts
+        
+        # Use the actual filename and copy it
+        cp $KERNEL_IMAGE ${{ github.workspace }}/artifacts/$(basename $KERNEL_IMAGE)
+        
+        # Also copy the modules if they exist (requires additional packaging later)
+        if [ -d "out/lib/modules" ]; then
+            cp -r out/lib/modules ${{ github.workspace }}/artifacts/modules
+        fi
+        
+      else
+        echo "::error::Kernel Image not found after compilation."
+        exit 1
+      fi
 
-    - name: Configure kernel
-      run: |
-        export PATH=~/clang/bin:$PATH
-        make O=out ARCH=arm64 sweet_defconfig
-
-    - name: Build kernel
-      run: |
-        export PATH=~/clang/bin:$PATH
-        make -j$(nproc) O=out ARCH=arm64 CC=clang
-
-    - name: Upload kernel Image
-      uses: actions/upload-artifact@v4
-      with:
-        name: kernel-image
-        path: |
-          out/arch/arm64/boot/Image
-          out/arch/arm64/boot/Image.gz
+  - name: Upload Kernel Artifact
+    uses: actions/upload-artifact@v4
+    with:
+      name: ${{ github.event.repository.name }}_${{ github.event.inputs.branch }}_kernel
+      path: ${{ github.workspace }}/artifacts/*
+      retention-days: 7
