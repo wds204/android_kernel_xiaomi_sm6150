@@ -13,31 +13,44 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install dependencies (Ubuntu 24.04 compatible)
       run: |
+        sudo dpkg --add-architecture i386
         sudo apt update
-        sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git lib32ncurses5-dev lib32z1-dev libssl-dev liblz4-tool zip zlib1g-dev python3
+        sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git libncurses-dev libncurses5 libc6:i386 libstdc++6:i386 libssl-dev liblz4-tool zip zlib1g-dev:i386 python3
 
-    - name: Use Proton-Clang (always works with this tree)
+    - name: Use Proton-Clang (stable 2024 build)
       run: |
         mkdir clang && cd clang
-        curl -LO https://github.com/kdrag0n/proton-clang/releases/download/20231015/proton-clang-20231015.tar.xz
-        tar -xf proton-clang-20231015.tar.xz
+        curl -LO https://github.com/kdrag0n/proton-clang/releases/download/20240820/proton-clang-20240820.tar.xz
+        tar -xf proton-clang-20240820.tar.xz
         echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+        clang --version  # Quick verify
 
     - name: Build kernel
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
-        make O=out clean
-        make O=out sweet_defconfig
+        export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+        make O=out mrproper  # Clean slate
+        make O=out sweet_defconfig  # Or vendor_sweet_defconfig if needed
+        make O=out olddefconfig  # Resolve A15 deps
         make -j$(nproc --all) O=out \
           CC=clang \
           CLANG_TRIPLE=aarch64-linux-gnu- \
           CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+          2>&1 | tee build.log
+
+    - name: Debug log on fail
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-fail-log
+        path: build.log
 
     - name: Package AnyKernel3 zip
+      if: success()
       run: |
         git clone https://github.com/osm0sis/AnyKernel3 anykernel
         cp out/arch/arm64/boot/Image.gz-dtb anykernel/
