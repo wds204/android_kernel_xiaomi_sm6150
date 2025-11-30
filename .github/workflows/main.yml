@@ -1,71 +1,109 @@
-name: Build Sweet Kernel
+name: Build VantomKernel for Sweet (A15)
 
 on:
   push:
-    branches:
-      - bpf
-  workflow_dispatch:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Manual trigger
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      ARCH: arm64
-      KBUILD_OUTPUT: out
+    container: ubuntu:22.04  # Ensures clean env
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v3
+    - name: Checkout Kernel Source
+      uses: actions/checkout@v4
+      with:
+        submodules: true  # If you have submodules like AnyKernel3
 
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git build-essential bc ccache flex bison libncurses-dev unzip wget tar
+    - name: Install Dependencies
+      run: |
+        apt-get update
+        apt-get install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 libncurses5 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 bc ccache libssl-dev repo
 
-      - name: Download Clang/LLVM toolchain
-        run: |
-          mkdir -p ~/toolchain && cd ~/toolchain
-          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/bd96dfe349c962681f0e5388af874c771ef96670/clang‑r416183b.tar.gz
-          tar xf clang‑r416183b.tar.gz
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        max-size: 1G
+      env:
+        CCACHE_DIR: ${{ runner.temp }}/ccache
 
-      - name: Set cross‑compile environment
-        run: |
-          export PATH=~/toolchain/clang‑r416183b/bin:$PATH
-          export CROSS_COMPILE=aarch64-linux-android-
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CC=clang
+    - name: Download Proton-Clang
+      run: |
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+        echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+        # Verify: Should show clang --version
+        clang --version || echo "Clang PATH issue!"
 
-      - name: Cache build output and toolchain
-        uses: actions/cache@v4
-        id: cache-toolchain
-        with:
-          path: |
-            ~/toolchain
-            out
-          key: ${{ runner.os }}-sweet-kernel-${{ hashFiles('**/arch/arm64/configs/sweet_defconfig') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-sweet-kernel-
+    - name: Prepare Config
+      run: |
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export O=out
+        # Use sweet_defconfig (common for Vantom); swap to vendor_sweet_defconfig if needed
+        make O=out sweet_defconfig || make O=out vendor_sweet_defconfig
+        # Fix common Clang issues: Disable strong stack protector (temp for build)
+        scripts/config --file out/.config -d CONFIG_CC_STACKPROTECTOR_STRONG
+        scripts/config --file out/.config -e CONFIG_CC_STACKPROTECTOR_REGULAR
+        # Enable arm32 compat if vdso errors (for 4.14 kernels)
+        scripts/config --file out/.config -e CONFIG_COMPAT_VDSO
+        # For A15: Enable GKI if your fork has it (uncomment if needed)
+        # scripts/config --file out/.config -e CONFIG_MODULES
+        # scripts/config --file out/.config -e CONFIG_GKI_OBJECT
+        make O=out olddefconfig  # Resolve any new deps
+        # Dump config snippet for debug
+        grep -E "(CONFIG_CC_STACKPROTECTOR|CONFIG_COMPAT_VDSO)" out/.config || true
 
-      - name: Configure kernel
-        run: |
-          make O=out sweet_defconfig
+    - name: Build Kernel
+      run: |
+        export PATH="\( GITHUB_WORKSPACE/clang/bin: \){PATH}"
+        export CC="ccache clang"
+        export CLANG_TRIPLE=aarch64-linux-gnu-
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CROSS_COMPILE_ARM32=arm-linux-gnueabi-  # Key for 4.14 (not COMPAT)
+        export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/clang/lib:$LD_LIBRARY_PATH"
+        make -j$(nproc) O=out \
+          CC=clang \
+          NM=llvm-nm \
+          STRIP=llvm-strip \
+          OBJCOPY=llvm-objcopy \
+          OBJDUMP=llvm-objdump \
+          CCACHE=ccache \
+          V=1  # Verbose: Logs everything for errors
+      env:
+        CCACHE_DIR: ${{ runner.temp }}/ccache
 
-      - name: Build kernel
-        run: |
-          make -j$(nproc) O=out \
-            ARCH=${{ env.ARCH }} \
-            CC=${{ env.CC }} \
-            CLANG_TRIPLE=${{ env.CLANG_TRIPLE }} \
-            CROSS_COMPILE=${{ env.CROSS_COMPILE }}
+    - name: Package with AnyKernel3
+      if: success()  # Only if build succeeds
+      run: |
+        # Assumes AnyKernel3 cloned as 'anykernel' dir; clone if missing: git clone https://github.com/osm0sis/AnyKernel3 anykernel
+        cp out/arch/arm64/boot/Image.gz-dtb anykernel/Image.gz-dtb  # Or 'Image' if no dtb
+        cd anykernel
+        # Customize anykernel.sh
+        sed -i 's/KERNELNAME="VantomKernel"/KERNELNAME="YourVantomFork-A15"/g' anykernel.sh
+        sed -i 's/VERSION="r1"/VERSION="A15-r1-$(date +%Y%m%d)"/g' anykernel.sh
+        zip -r9 ../VantomKernel-sweet-A15-$(date +%Y%m%d).zip * -x .git README.md *placeholder
+        cd ..
 
-      - name: Package kernel for TWRP
-        run: |
-          mkdir -p kernel_zip
-          cp out/arch/arm64/boot/Image.gz-dtb kernel_zip/
-          cd kernel_zip
-          zip -r sweet_kernel_${{ github.run_number }}.zip Image.gz-dtb
-          mv sweet_kernel_${{ github.run_number }}.zip ../
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: VantomKernel-A15-Zip
+        path: |
+          VantomKernel-sweet-A15-*.zip
+          out/arch/arm64/boot/Image.gz-dtb  # Raw image too
+        retention-days: 30
 
+    - name: Notify on Failure
+      if: failure()
+      run: |
+        echo "Build failed! Common fixes:"
+        echo "1. Check logs for 'clang: No such file or directory' → PATH issue."
+        echo "2. 'vdso32' or '--prefix=' error → Cherry-pick https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=5a5e1e2d9f0a4f3b2c1d8e7f6a5b4c3d2e1f0a9b (arm64: vdso32 fix)."
+        echo "3. Linker/ASM errors → Your fork needs A15 patches; try A14 branch."
+        echo "Paste full error here for quick fix!"
       - name: Upload kernel artifact
         uses: actions/upload-artifact@v4
         with:
