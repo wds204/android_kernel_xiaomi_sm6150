@@ -1,0 +1,51 @@
+name: Build Kernel for sweet (A15)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git lib32ncurses5-dev lib32z1-dev libssl-dev liblz4-tool zip zlib1g-dev python3
+
+    - name: Use Proton-Clang (always works with this tree)
+      run: |
+        mkdir clang && cd clang
+        curl -LO https://github.com/kdrag0n/proton-clang/releases/download/20231015/proton-clang-20231015.tar.xz
+        tar -xf proton-clang-20231015.tar.xz
+        echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+
+    - name: Build kernel
+      run: |
+        export ARCH=arm64
+        export SUBARCH=arm64
+        make O=out clean
+        make O=out sweet_defconfig
+        make -j$(nproc --all) O=out \
+          CC=clang \
+          CLANG_TRIPLE=aarch64-linux-gnu- \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+    - name: Package AnyKernel3 zip
+      run: |
+        git clone https://github.com/osm0sis/AnyKernel3 anykernel
+        cp out/arch/arm64/boot/Image.gz-dtb anykernel/
+        cd anykernel
+        zip -r9 ../MyKernel-sweet-A15-$(date +%Y%m%d).zip * -x .git README.md
+
+    - name: Upload kernel
+      uses: actions/upload-artifact@v4
+      with:
+        name: MyKernel-sweet-A15
+        path: MyKernel-sweet-A15-*.zip
