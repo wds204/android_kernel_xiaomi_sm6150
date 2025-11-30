@@ -17,4 +17,71 @@ jobs:
       run: |
         sudo dpkg --add-architecture i386
         sudo apt update
-        sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git libncurses-dev libc6
+        sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git libncurses-dev libc6:i386 libstdc++6:i386 libssl-dev liblz4-tool zip zlib1g-dev:i386 python3
+
+    - name: Use Proton-Clang (git clone method)
+      run: |
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+        echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+        clang --version  # Quick verify
+
+    - name: Build kernel
+      run: |
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+        make O=out mrproper  # Clean slate
+        # Auto-detect defconfig
+        if make O=out sweet_defconfig 2>/dev/null; then
+          echo "Using sweet_defconfig"
+        elif make O=out vendor_sweet_defconfig 2>/dev/null; then
+          echo "Using vendor_sweet_defconfig"
+        else
+          echo "No sweet defconfig found. Available: $(ls arch/arm64/configs/ | grep -i sweet || echo 'None')"
+          exit 1
+        fi
+        make O=out olddefconfig  # Resolve A15 deps
+        make -j$(nproc --all) O=out \
+          CC=clang \
+          CLANG_TRIPLE=aarch64-linux-gnu- \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+          NM=llvm-nm \
+          OBJCOPY=llvm-objcopy \
+          STRIP=llvm-strip \
+          2>&1 | tee build.log
+
+    - name: Upload build log (always)
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
+        retention-days: 7
+
+    - name: Debug log on fail
+      if: failure()
+      run: echo "Build failed—check build-log artifact for details."
+
+    - name: Package AnyKernel3 zip
+      if: success()
+      run: |
+        git clone https://github.com/osm0sis/AnyKernel3 anykernel
+        if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
+          cp out/arch/arm64/boot/Image.gz-dtb anykernel/
+          echo "Packaged Image.gz-dtb"
+        elif [ -f out/arch/arm64/boot/Image ]; then
+          cp out/arch/arm64/boot/Image anykernel/
+          echo "Packaged Image (no dtb)"
+        else
+          echo "No kernel image found—build incomplete?"
+          exit 1
+        fi
+        cd anykernel
+        zip -r9 ../MyKernel-sweet-A15-$(date +%Y%m%d).zip * -x .git README.md
+
+    - name: Upload kernel
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: MyKernel-sweet-A15
+        path: MyKernel-sweet-A15-*.zip
