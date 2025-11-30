@@ -2,7 +2,7 @@ name: Build VantomKernel for Sweet (A15)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ bpf ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:  # Manual trigger
