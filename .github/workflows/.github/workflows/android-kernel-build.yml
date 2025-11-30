@@ -17,6 +17,7 @@ steps:
     run: |
       cd kernel
       mkdir -p clang
+      # The wget command now correctly downloads the tarball
       wget -qO- ${{ env.TOOLCHAIN_URL }} | tar xz -C clang
       
       # Check for 'bin' or 'tools/clang/bin' structure
